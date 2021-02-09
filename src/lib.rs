@@ -1,6 +1,5 @@
 use std::convert::TryFrom;
 use std::net::SocketAddr;
-use std::net::UdpSocket as StdUdpSocket;
 
 use tokio::task::{self, JoinHandle};
 use tokio::net::UdpSocket;
@@ -22,15 +21,17 @@ use lay::{
 };
 
 pub mod message;
+//pub mod server;
 
 const SEND_QUEUE_LEN: usize = 1000;
 const RECV_QUEUE_LEN: usize = 1000;
 const OSC_BUF_LEN: usize = 1000;
 
-async fn device_comm_loop(tx_sock: UdpSocket,
-                          rx_sock: UdpSocket,
+async fn device_comm_loop(tx_addr: SocketAddr,
+                          rx_addr: SocketAddr,
                           mut req_rx: mpsc::Receiver<Option<Request>>,
                           meas_tx: mpsc::Sender<Option<((u32, u32), bool)>>) -> anyhow::Result<()> {
+    let rx_sock = UdpSocket::bind(rx_addr).await?;
     let mut buf = vec![0; OSC_BUF_LEN];
     while let Some(msg) = req_rx.recv().await {
         info!("device_sender_loop: Received from channel: {:?}", msg);
@@ -38,7 +39,7 @@ async fn device_comm_loop(tx_sock: UdpSocket,
             Some(msg) => {
                 let packet = rosc::encoder::encode(&OscPacket::Message(OscMessage::from(&msg))
                         ).map_err(|e| anyhow!("{:?}", e))?;
-                tx_sock.send(&packet).await?;
+                rx_sock.send_to(&packet, tx_addr).await?;
                 if let Request::Mz(x, y) = msg {
                     let res = receive_response(&mut buf, &rx_sock).await?;
                     info!("Received from device: {:?}", res);
@@ -201,12 +202,10 @@ impl Measured for MitouOscBuffer {
 
 fn exec(size: (u32, u32), device_tx: SocketAddr, device_rx: SocketAddr) -> anyhow::Result<MitouOscLayer>
 {
-    let device_tx = UdpSocket::from_std(StdUdpSocket::bind(device_tx)?)?;
-    let device_rx = UdpSocket::from_std(StdUdpSocket::bind(device_rx)?)?;
     let (req_tx, req_rx) = mpsc::channel(SEND_QUEUE_LEN);
     let (meas_tx, meas_rx) = mpsc::channel(RECV_QUEUE_LEN);
     Ok(MitouOscLayer {
-        handle: task::spawn(async {
+        handle: task::spawn(async move {
             let device_comm = task::spawn(device_comm_loop(device_tx, device_rx, req_rx, meas_tx));
 
             device_comm.await??;
