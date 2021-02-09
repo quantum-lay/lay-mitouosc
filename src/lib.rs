@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::convert::TryFrom;
 use std::net::SocketAddr;
 use std::net::UdpSocket as StdUdpSocket;
@@ -13,7 +12,7 @@ use anyhow::{anyhow, bail, ensure};
 use log::{LevelFilter, info, warn};
 
 use message::{Response, Request};
-use rosc::{OscBundle, OscMessage, OscPacket};
+use rosc::{OscMessage, OscPacket};
 
 use lay::{
     Layer,
@@ -28,9 +27,10 @@ const SEND_QUEUE_LEN: usize = 1000;
 const RECV_QUEUE_LEN: usize = 1000;
 const OSC_BUF_LEN: usize = 1000;
 
-async fn device_sender_loop(tx_sock: UdpSocket,
-                            mut req_rx: mpsc::Receiver<Option<Request>>,
-                            meas_tx: mpsc::Sender<Option<((u32, u32), bool)>>) -> anyhow::Result<()> {
+async fn device_comm_loop(tx_sock: UdpSocket,
+                          rx_sock: UdpSocket,
+                          mut req_rx: mpsc::Receiver<Option<Request>>,
+                          meas_tx: mpsc::Sender<Option<((u32, u32), bool)>>) -> anyhow::Result<()> {
     let mut buf = vec![0; OSC_BUF_LEN];
     while let Some(msg) = req_rx.recv().await {
         info!("device_sender_loop: Received from channel: {:?}", msg);
@@ -40,7 +40,7 @@ async fn device_sender_loop(tx_sock: UdpSocket,
                         ).map_err(|e| anyhow!("{:?}", e))?;
                 tx_sock.send(&packet).await?;
                 if let Request::Mz(x, y) = msg {
-                    let res = receive_response(&mut buf, &tx_sock).await?;
+                    let res = receive_response(&mut buf, &rx_sock).await?;
                     info!("Received from device: {:?}", res);
                     let measured = match res { Response::Mz(_, f) => (f as u32) == 1 };
                     meas_tx.send(Some(((x as u32, y as u32), measured))).await?;
@@ -74,50 +74,24 @@ async fn receive_response(buf: &mut Vec<u8>, sock: &UdpSocket) -> anyhow::Result
     Ok(msg)
 }
 
-async fn host_sender_loop(tx_addr: SocketAddr, mut chan_rx: mpsc::Receiver<Response>) -> anyhow::Result<()> {
-    let tx = UdpSocket::bind(tx_addr).await?;
-    while let Some(msg) = chan_rx.recv().await {
-        info!("host_sender_loop: Received from channel: {:?}", msg);
-        let packet = rosc::encoder::encode(&OscPacket::Bundle(
-                OscBundle { timetag: (0, 0),
-                            content: vec![OscPacket::Message(OscMessage::from(&msg))]
-                })).map_err(|e| anyhow!("{:?}", e))?;
-        tx.send(&packet).await?;
-    }
-    bail!("host_sender_loop unexpected finished");
-}
-
-async fn host_receiver_loop(host_rx_addr: SocketAddr, chan_tx: mpsc::Sender<Request>) -> anyhow::Result<()> {
-    let rx = UdpSocket::bind(host_rx_addr).await?;
-    let mut buf = vec![0; OSC_BUF_LEN];
-    loop {
-        info!("Receiving from {}...", host_rx_addr);
-        let len = rx.recv(&mut buf).await?;
-        let packet = rosc::decoder::decode(&buf[..len]).map_err(|e| anyhow!("{:?}", e))?;
-        let msg = Request::try_from(match packet {
-            OscPacket::Message(msg) => {
-                warn!("Message without Bundle");
-                msg
-            },
-            OscPacket::Bundle(mut bundle) => {
-                ensure!(bundle.content.len() != 0, "Received empty bundle.");
-                ensure!(bundle.content.len() == 1, "Multiple messages in same bundle.");
-                match bundle.content.pop().unwrap() {
-                    OscPacket::Message(msg) => msg,
-                    OscPacket::Bundle(_bundle) => bail!("Received nested bundle.")
-                }
-            }
-        })?;
-        buf.clear();
-        chan_tx.send(msg).await?;
-    }
-}
-
-struct MitouOscLayer {
+pub struct MitouOscLayer {
     handle: JoinHandle<anyhow::Result<()>>,
     size: (u32, u32),
     sender: mpsc::Sender<Option<Request>>,
     receiver: mpsc::Receiver<Option<((u32, u32), bool)>>,
+}
+
+impl MitouOscLayer {
+    pub fn exec(size: (u32, u32), device_tx: SocketAddr, device_rx: SocketAddr)
+            -> anyhow::Result<MitouOscLayer> {
+        exec(size, device_tx, device_rx)
+    }
+}
+
+impl Drop for MitouOscLayer {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
 }
 
 impl Layer for MitouOscLayer {
@@ -215,7 +189,7 @@ impl SGate for MitouOscLayer {}
 impl TGate for MitouOscLayer {}
 impl CXGate for MitouOscLayer {}
 
-struct MitouOscBuffer(Vec<bool>, usize);
+pub struct MitouOscBuffer(Vec<bool>, usize);
 
 impl Measured for MitouOscBuffer {
     type Slot = (u32, u32);
@@ -233,19 +207,9 @@ fn exec(size: (u32, u32), device_tx: SocketAddr, device_rx: SocketAddr) -> anyho
     let (meas_tx, meas_rx) = mpsc::channel(RECV_QUEUE_LEN);
     Ok(MitouOscLayer {
         handle: task::spawn(async {
-            /*
-            let (chan_tx, chan_rx) = mpsc::channel(SEND_QUEUE_LEN);
-            let (chan2_tx, chan2_rx) = mpsc::channel(RECV_QUEUE_LEN);
-            let host_receiver = task::spawn(host_receiver_loop(host_rx, chan_tx));
-            let device_sender = task::spawn(device_sender_loop(device_tx, chan_rx));
-            let device_receiver = task::spawn(device_receiver_loop(device_rx, chan2_tx));
-            let host_sender = task::spawn(host_sender_loop(host_tx, chan2_rx));
+            let device_comm = task::spawn(device_comm_loop(device_tx, device_rx, req_rx, meas_tx));
 
-            host_receiver.await??;
-            device_sender.await??;
-            device_receiver.await??;
-            host_sender.await??;
-            */
+            device_comm.await??;
             Ok(())
         }),
         size,
