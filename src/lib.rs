@@ -21,7 +21,6 @@ use lay::{
 };
 
 pub mod message;
-//pub mod server;
 
 const SEND_QUEUE_LEN: usize = 1000;
 const RECV_QUEUE_LEN: usize = 1000;
