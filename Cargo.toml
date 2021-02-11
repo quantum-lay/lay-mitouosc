@@ -16,10 +16,19 @@ thiserror = "1.0.22"
 tokio = { version = "0.3.4", features = ["full"] }
 # for server binary
 lay-steane = { path = "../lay-steane", optional = true }
+lay-simulator-gk = { path = "../lay-simulator-gk", optional = true }
 
 [features]
-server-binary = ["lay-steane"]
+server-binary = ["lay-steane", "lay-simulator-gk"]
 
 [[bin]]
-name = "server"
+name = "gk-server"
+required-features = ["server-binary"]
+
+[[bin]]
+name = "steane-gk-server"
+required-features = ["server-binary"]
+
+[[bin]]
+name = "steane-osc-server"
 required-features = ["server-binary"]

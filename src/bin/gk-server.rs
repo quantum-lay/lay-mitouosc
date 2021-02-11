@@ -8,7 +8,7 @@ use lay::{
     gates::{PauliGate, HGate, CXGate},
     operations::{Operation, PauliOperation, HOperation, CXOperation}
 };
-use lay_steane::SteaneLayer;
+use lay_simulator_gk::GottesmanKnillSimulator;
 
 use tokio::task;
 use tokio::net::UdpSocket;
@@ -140,6 +140,7 @@ where L: Layer + PauliGate + HGate + CXGate + Send + 'static,
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::Builder::from_default_env().filter_level(LevelFilter::Info).init();
     let n_qubits = 10;
     let tx = env::args().nth(1)
                         .ok_or(anyhow!("tx address expected"))?
@@ -147,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
     let rx = env::args().nth(2)
                         .ok_or(anyhow!("rx address expected"))?
                         .parse::<SocketAddr>()?;
-    let backend = SteaneLayer::from_seed_with_gk(n_qubits, 123);
+    let backend = GottesmanKnillSimulator::from_seed(n_qubits, 123);
 
     exec(tx, rx, backend, |x, _| x as u32, |x, _| x as u32).await
 }
