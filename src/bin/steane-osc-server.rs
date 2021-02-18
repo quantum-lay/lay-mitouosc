@@ -145,11 +145,11 @@ const REG_NUM: u32 = 4;
 struct Linearize;
 impl Converter<u32, (u32, u32), u32, (u32, u32)> for Linearize {
     fn qconv(q: u32) -> (u32, u32) {
-        (q, 0)
+        (1, q)
     }
 
     fn sconv(s: u32) -> (u32, u32) {
-        (s, 0)
+        (1, s)
     }
 }
 
