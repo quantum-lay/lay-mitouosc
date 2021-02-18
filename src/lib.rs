@@ -74,6 +74,7 @@ async fn receive_response(buf: &mut Vec<u8>, sock: &UdpSocket) -> anyhow::Result
     Ok(msg)
 }
 
+#[derive(Debug)]
 pub struct MitouOscLayer {
     handle: JoinHandle<anyhow::Result<()>>,
     size: (u32, u32),
@@ -189,6 +190,7 @@ impl SGate for MitouOscLayer {}
 impl TGate for MitouOscLayer {}
 impl CXGate for MitouOscLayer {}
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct MitouOscBuffer(Vec<bool>, usize);
 
 impl Measured for MitouOscBuffer {

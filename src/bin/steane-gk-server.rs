@@ -1,5 +1,6 @@
-use std::env;
 use std::convert::TryFrom;
+use std::env;
+use std::fmt::Debug;
 use std::net::SocketAddr;
 
 use lay::{
@@ -84,8 +85,8 @@ async fn runner_loop<L>(
         result_tx: mpsc::Sender<Response>,
         cast_q: impl Fn(i32, i32) -> L::Qubit + Send + 'static,
         cast_s: impl Fn(i32, i32) -> L::Slot + Send + 'static) -> anyhow::Result<()>
-where L: Layer + PauliGate + HGate + CXGate + Send + 'static,
-      <L as Layer>::Operation: Operation<L> + PauliOperation<L> + HOperation<L> + CXOperation<L> + Send,
+where L: Layer + PauliGate + HGate + CXGate + Debug + Send + 'static,
+      <L as Layer>::Operation: Operation<L> + PauliOperation<L> + HOperation<L> + CXOperation<L> + Debug + Send,
       <L as Layer>::Buffer: Send,
 {
     info!("runner_loop: Start");
@@ -104,6 +105,7 @@ where L: Layer + PauliGate + HGate + CXGate + Send + 'static,
                 info!("runner_loop: Received Mz inst.");
                 ops.measure(cast_q(x, y), cast_s(x, y));
                 info!("runner_loop: send_receive...");
+                info!("ops: {:?}", ops);
                 backend.send_receive(ops.as_ref(), &mut buf);
                 let bit = buf.get(cast_s(x, y));
                 info!("runner_loop: measurement: {}", bit);
@@ -121,8 +123,8 @@ pub async fn exec<L>(tx: SocketAddr,
                  backend: L,
                  cast_q: impl Fn(i32, i32) -> L::Qubit + Send + 'static,
                  cast_s: impl Fn(i32, i32) -> L::Slot + Send + 'static) -> anyhow::Result<()>
-where L: Layer + PauliGate + HGate + CXGate + Send + 'static,
-      <L as Layer>::Operation: Operation<L> + PauliOperation<L> + HOperation<L> + CXOperation<L> + Send,
+where L: Layer + PauliGate + HGate + CXGate + Debug + Send + 'static,
+      <L as Layer>::Operation: Operation<L> + PauliOperation<L> + HOperation<L> + CXOperation<L> + Debug + Send,
       <L as Layer>::Buffer: Send,
 {
     let (ops_tx, ops_rx) = mpsc::channel(QUEUE_LEN);
@@ -150,5 +152,5 @@ async fn main() -> anyhow::Result<()> {
                         .parse::<SocketAddr>()?;
     let backend = SteaneLayer::from_seed_with_gk(n_qubits, 123);
 
-    exec(tx, rx, backend, |x, _| x as u32, |x, _| x as u32).await
+    exec(tx, rx, backend, |_, y| y as u32, |_, y| y as u32).await
 }

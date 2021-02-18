@@ -150,5 +150,5 @@ async fn main() -> anyhow::Result<()> {
                         .parse::<SocketAddr>()?;
     let backend = GottesmanKnillSimulator::from_seed(n_qubits, 123);
 
-    exec(tx, rx, backend, |x, _| x as u32, |x, _| x as u32).await
+    exec(tx, rx, backend, |_, y| y as u32, |_, y| y as u32).await
 }

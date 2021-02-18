@@ -177,5 +177,5 @@ async fn main() -> anyhow::Result<()> {
             ),
             n_logical_qubits);
 
-    exec(client_tx, client_rx, backend, |x, _| x as u32, |x, _| x as u32).await
+    exec(client_tx, client_rx, backend, |_, y| y as u32, |_, y| y as u32).await
 }
