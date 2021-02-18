@@ -1,6 +1,6 @@
 [package]
 name = "lay-mitouosc"
-version = "0.1.0"
+version = "0.1.2"
 authors = ["gyu-don <takumi.kt+git@gmail.com>"]
 edition = "2018"
 description = "OSC communication library and binary for MITOU project"
@@ -18,8 +18,8 @@ rosc = "0.4.2"
 thiserror = "1.0.22"
 tokio = { version = "0.3.4", features = ["full"] }
 # for server binary
-lay-steane = { version = "0.1.0", optional = true }
-lay-simulator-gk = { version = "0.1.0", optional = true }
+lay-steane = { version = "0.1.1", path = "../lay-steane", optional = true }
+lay-simulator-gk = { version = "0.1.0", path = "../lay-simulator-gk", optional = true }
 
 [features]
 server-binary = ["lay-steane", "lay-simulator-gk"]
